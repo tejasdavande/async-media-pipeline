@@ -9,8 +9,10 @@ services:
       - .env
     environment:
       MONGO_URI: mongodb://mongo:27017/media_pipeline
+      S3_ENDPOINT: http://localstack:4566
     depends_on:
       - mongo
+      - localstack
 
   mongo:
     image: mongo:7
@@ -18,6 +20,16 @@ services:
       - '27017:27017'
     volumes:
       - mongodata:/data/db
+
+  localstack:
+    image: localstack/localstack:3.8
+    environment:
+      SERVICES: s3
+      S3_SKIP_SIGNATURE_VALIDATION: 0
+    ports:
+      - '4566:4566'
+    volumes:
+      - ./docker/localstack/init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh
 
 volumes:
   mongodata:

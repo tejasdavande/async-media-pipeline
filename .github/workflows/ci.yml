@@ -22,6 +22,10 @@ jobs:
     env:
       PORT: 3000
       MONGO_URI: mongodb://localhost:27017/media_pipeline
+      S3_BUCKET: media
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ci-key
+      S3_SECRET_ACCESS_KEY: ci-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
