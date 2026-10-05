@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { NotFound, S3Client } from '@aws-sdk/client-s3';
 import { StorageService } from './storage.service';
 
 describe('StorageService', () => {
@@ -37,5 +38,31 @@ describe('StorageService', () => {
 
     expect(url.searchParams.has('x-amz-checksum-crc32')).toBe(false);
     expect(url.searchParams.has('x-amz-sdk-checksum-algorithm')).toBe(false);
+  });
+
+  describe('getObjectSize', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    it('returns the content length of an existing object', async () => {
+      jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({ ContentLength: 2048 } as never);
+
+      await expect(new StorageService(config).getObjectSize('uploads/abc')).resolves.toBe(2048);
+    });
+
+    it('returns null when the object does not exist', async () => {
+      jest
+        .spyOn(S3Client.prototype, 'send')
+        .mockRejectedValue(new NotFound({ message: 'NotFound', $metadata: {} }) as never);
+
+      await expect(new StorageService(config).getObjectSize('uploads/abc')).resolves.toBeNull();
+    });
+
+    it('rethrows other errors', async () => {
+      jest.spyOn(S3Client.prototype, 'send').mockRejectedValue(new Error('access denied') as never);
+
+      await expect(new StorageService(config).getObjectSize('uploads/abc')).rejects.toThrow(
+        'access denied'
+      );
+    });
   });
 });

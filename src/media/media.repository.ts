@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { MediaStatus } from './media-status.enum';
 import { Media } from './schemas/media.schema';
 
 @Injectable()
@@ -17,5 +18,11 @@ export class MediaRepository {
 
   async findById(id: string): Promise<Media | null> {
     return await this.mediaModel.findById(id).lean();
+  }
+
+  async transitionStatus(id: string, from: MediaStatus, to: MediaStatus): Promise<Media | null> {
+    return await this.mediaModel
+      .findOneAndUpdate({ _id: id, status: from }, { status: to }, { new: true })
+      .lean();
   }
 }

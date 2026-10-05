@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { StorageService } from '../storage/storage.service';
 import { MediaKind } from './media-kind.enum';
@@ -9,8 +9,10 @@ import { MediaService } from './media.service';
 import { Media } from './schemas/media.schema';
 
 describe('MediaService', () => {
-  let mediaRepository: jest.Mocked<Pick<MediaRepository, 'create' | 'findById'>>;
-  let storageService: jest.Mocked<Pick<StorageService, 'createUploadUrl'>>;
+  let mediaRepository: jest.Mocked<
+    Pick<MediaRepository, 'create' | 'findById' | 'transitionStatus'>
+  >;
+  let storageService: jest.Mocked<Pick<StorageService, 'createUploadUrl' | 'getObjectSize'>>;
   let service: MediaService;
 
   const stored = (overrides: Partial<Media> = {}): Media => ({
@@ -27,8 +29,8 @@ describe('MediaService', () => {
   });
 
   beforeEach(() => {
-    mediaRepository = { create: jest.fn(), findById: jest.fn() };
-    storageService = { createUploadUrl: jest.fn() };
+    mediaRepository = { create: jest.fn(), findById: jest.fn(), transitionStatus: jest.fn() };
+    storageService = { createUploadUrl: jest.fn(), getObjectSize: jest.fn() };
     service = new MediaService(
       mediaRepository as unknown as MediaRepository,
       storageService as unknown as StorageService
@@ -83,6 +85,75 @@ describe('MediaService', () => {
 
       await expect(service.getById(new Types.ObjectId().toString())).rejects.toThrow(
         NotFoundException
+      );
+    });
+  });
+
+  describe('completeUpload', () => {
+    it('marks the media uploaded once the object exists with the declared size', async () => {
+      const media = stored();
+      mediaRepository.findById.mockResolvedValue(media);
+      storageService.getObjectSize.mockResolvedValue(1024);
+      mediaRepository.transitionStatus.mockResolvedValue({
+        ...media,
+        status: MediaStatus.UPLOADED,
+      });
+
+      const result = await service.completeUpload(media._id.toString());
+
+      expect(storageService.getObjectSize).toHaveBeenCalledWith('uploads/abc');
+      expect(mediaRepository.transitionStatus).toHaveBeenCalledWith(
+        media._id.toString(),
+        MediaStatus.PENDING_UPLOAD,
+        MediaStatus.UPLOADED
+      );
+      expect(result.status).toBe(MediaStatus.UPLOADED);
+    });
+
+    it('throws 404 for unknown media', async () => {
+      mediaRepository.findById.mockResolvedValue(null);
+
+      await expect(service.completeUpload(new Types.ObjectId().toString())).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it('rejects media that is no longer pending', async () => {
+      mediaRepository.findById.mockResolvedValue(stored({ status: MediaStatus.UPLOADED }));
+
+      await expect(service.completeUpload(new Types.ObjectId().toString())).rejects.toThrow(
+        ConflictException
+      );
+      expect(storageService.getObjectSize).not.toHaveBeenCalled();
+    });
+
+    it('rejects when nothing was uploaded', async () => {
+      mediaRepository.findById.mockResolvedValue(stored());
+      storageService.getObjectSize.mockResolvedValue(null);
+
+      await expect(service.completeUpload(new Types.ObjectId().toString())).rejects.toThrow(
+        'file has not been uploaded yet'
+      );
+      expect(mediaRepository.transitionStatus).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the uploaded size does not match the declared size', async () => {
+      mediaRepository.findById.mockResolvedValue(stored({ size: 1024 }));
+      storageService.getObjectSize.mockResolvedValue(999);
+
+      await expect(service.completeUpload(new Types.ObjectId().toString())).rejects.toThrow(
+        'uploaded file is 999 bytes, expected 1024'
+      );
+      expect(mediaRepository.transitionStatus).not.toHaveBeenCalled();
+    });
+
+    it('rejects when a concurrent request already moved it on', async () => {
+      mediaRepository.findById.mockResolvedValue(stored());
+      storageService.getObjectSize.mockResolvedValue(1024);
+      mediaRepository.transitionStatus.mockResolvedValue(null);
+
+      await expect(service.completeUpload(new Types.ObjectId().toString())).rejects.toThrow(
+        ConflictException
       );
     });
   });

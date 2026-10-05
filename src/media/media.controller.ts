@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { CreateUploadDto } from './dto/create-upload.dto';
 import { MediaIdParamDto } from './dto/media-id-param.dto';
 import { MediaResponseDto } from './dto/media-response.dto';
@@ -17,5 +17,11 @@ export class MediaController {
   @Get(':id')
   async findOne(@Param() params: MediaIdParamDto): Promise<MediaResponseDto> {
     return await this.mediaService.getById(params.id);
+  }
+
+  @Post(':id/complete')
+  @HttpCode(HttpStatus.OK)
+  async complete(@Param() params: MediaIdParamDto): Promise<MediaResponseDto> {
+    return await this.mediaService.completeUpload(params.id);
   }
 }

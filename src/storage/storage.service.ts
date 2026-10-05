@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { HeadObjectCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
@@ -37,5 +37,18 @@ export class StorageService {
       expiresIn: expiresInSeconds,
       signableHeaders: new Set(['content-type']),
     });
+  }
+
+  async getObjectSize(key: string): Promise<number | null> {
+    try {
+      const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+
+      return head.ContentLength ?? null;
+    } catch (error) {
+      if (error instanceof NotFound) {
+        return null;
+      }
+      throw error;
+    }
   }
 }
