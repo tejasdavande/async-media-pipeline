@@ -3,14 +3,19 @@ import { NotFound, S3Client } from '@aws-sdk/client-s3';
 import { StorageService } from './storage.service';
 
 describe('StorageService', () => {
-  const config = new ConfigService({
+  const values: Record<string, unknown> = {
     S3_BUCKET: 'media',
     S3_REGION: 'us-east-1',
     S3_ENDPOINT: 'http://localhost:4566',
     S3_FORCE_PATH_STYLE: true,
     S3_ACCESS_KEY_ID: 'test-key',
     S3_SECRET_ACCESS_KEY: 'test-secret',
-  });
+  };
+  // a real ConfigService reads process.env before its own values, so ci's S3_* vars would leak in
+  const config = {
+    get: (key: string) => values[key],
+    getOrThrow: (key: string) => values[key],
+  } as unknown as ConfigService;
 
   it('signs a PUT url for the key that expires when asked', async () => {
     const service = new StorageService(config);
