@@ -52,6 +52,15 @@ curl -s -X POST localhost:3000/media/<id>/complete
 npm test
 ```
 
+The e2e suite runs the real upload flow (create ticket, PUT to the presigned URL, complete) against Mongo and LocalStack, so start those first:
+
+```bash
+docker compose up -d mongo localstack
+npm run test:e2e
+```
+
+CI runs both suites, with Mongo and LocalStack as service containers.
+
 ## License
 
 MIT
