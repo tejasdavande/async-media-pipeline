@@ -26,6 +26,6 @@ const processingJobDefaults = {
   ],
   controllers: [MediaController],
   providers: [MediaService, MediaRepository],
-  exports: [MediaService],
+  exports: [MediaService, MediaRepository],
 })
 export class MediaModule {}

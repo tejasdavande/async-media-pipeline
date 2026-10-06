@@ -2,7 +2,7 @@
 
 Async media processing microservice built with NestJS. Clients upload straight to S3 with presigned URLs, and the heavy work (FFmpeg HLS transcoding, Sharp thumbnails) runs in BullMQ workers backed by Redis, with retries and a job-status API to poll.
 
-Work in progress: presigned uploads and the processing queues are in, the workers are next.
+Work in progress: presigned uploads, the processing queues and image thumbnails are in, FFmpeg HLS transcoding for video is next.
 
 ## How uploads work
 
@@ -12,11 +12,20 @@ Once the PUT succeeds, the client calls `POST /media/:id/complete`. The API chec
 
 It then queues a processing job on BullMQ: videos go to `video-processing`, images to `image-processing`, so slow transcodes can't starve thumbnail jobs and each queue gets its own worker concurrency. The job id is the media id, so a duplicate enqueue is a no-op. Jobs retry 3 times with exponential backoff (10s, 20s, 40s). If Redis is unreachable, the record goes back to `pending_upload` and `complete` returns `503`, so the client can just call it again. The Redis connection has the offline queue disabled, so that failure is immediate instead of the request hanging until Redis comes back.
 
+## Processing
+
+Status goes `pending_upload` → `uploaded` → `processing` → `ready` or `failed`. Poll `GET /media/:id` to follow it.
+
+- **Images** (`image-processing`, concurrency 4): Sharp auto-rotates from EXIF, records the original `width`/`height`, and writes a WebP thumbnail that fits in 320×320 (never upscaled) to `thumbnails/<id>.webp`. A file that doesn't decode as an image fails immediately with an `UnrecoverableError` instead of burning retries.
+- **Videos** (`video-processing`): queued, worker not written yet.
+
+A transient error (S3 timeout, say) is retried. Once the last attempt fails, the record moves to `failed` with a `failureReason`. A retried job picks up records already in `processing`, so a worker that crashed mid-job doesn't strand them.
+
 Accepted types: `video/mp4`, `video/quicktime`, `video/webm`, `image/jpeg`, `image/png`, `image/webp`, up to 2 GB.
 
 ## Tech stack
 
-NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, AWS S3 (SDK v3, presigned URLs), LocalStack for local S3, Docker.
+NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, Sharp, AWS S3 (SDK v3, presigned URLs), LocalStack for local S3, Docker.
 
 ## Endpoints
 
@@ -25,7 +34,7 @@ NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, AWS S3 (SDK v3, presigne
 | GET | `/health` | `200` when Mongo is connected, `503` otherwise |
 | POST | `/media/uploads` | body `{ filename, contentType, size }`; returns the media record, a presigned `uploadUrl` and its `expiresAt` |
 | POST | `/media/:id/complete` | confirms the object is in S3 with the declared size, marks the record `uploaded` and queues it for processing; `409` if it's missing, the size differs, or it isn't pending; `503` if the job couldn't be queued |
-| GET | `/media/:id` | media record with its current `status` |
+| GET | `/media/:id` | media record with its current `status`, plus `width`/`height` once processed or `failureReason` if it failed |
 
 ## Running locally
 
@@ -54,7 +63,7 @@ curl -s -X POST localhost:3000/media/<id>/complete
 npm test
 ```
 
-The e2e suite runs the real upload flow (create ticket, PUT to the presigned URL, complete) against Mongo, Redis and LocalStack, so start those first:
+The e2e suites run the real upload flow (create ticket, PUT to the presigned URL, complete) and the image worker end to end against Mongo, Redis and LocalStack, so start those first:
 
 ```bash
 docker compose up -d mongo redis localstack

@@ -20,9 +20,16 @@ export class MediaRepository {
     return await this.mediaModel.findById(id).lean();
   }
 
-  async transitionStatus(id: string, from: MediaStatus, to: MediaStatus): Promise<Media | null> {
+  async transitionStatus(
+    id: string,
+    from: MediaStatus | MediaStatus[],
+    to: MediaStatus,
+    changes: Partial<Pick<Media, 'width' | 'height' | 'thumbnailKey' | 'failureReason'>> = {}
+  ): Promise<Media | null> {
+    const status = Array.isArray(from) ? { $in: from } : from;
+
     return await this.mediaModel
-      .findOneAndUpdate({ _id: id, status: from }, { status: to }, { new: true })
+      .findOneAndUpdate({ _id: id, status }, { ...changes, status: to }, { new: true })
       .lean();
   }
 }

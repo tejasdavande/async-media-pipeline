@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { validate } from './config/env.validator';
 import { HealthModule } from './health/health.module';
 import { MediaModule } from './media/media.module';
+import { ProcessingModule } from './processing/processing.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { MediaModule } from './media/media.module';
     }),
     HealthModule,
     MediaModule,
+    ProcessingModule,
   ],
 })
 export class AppModule {}

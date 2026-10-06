@@ -9,6 +9,9 @@ export class MediaResponseDto {
   kind: MediaKind;
   size: number;
   status: MediaStatus;
+  width?: number;
+  height?: number;
+  failureReason?: string;
   createdAt: Date;
   updatedAt: Date;
 
@@ -20,6 +23,9 @@ export class MediaResponseDto {
       kind: media.kind,
       size: media.size,
       status: media.status,
+      width: media.width,
+      height: media.height,
+      failureReason: media.failureReason,
       createdAt: media.createdAt,
       updatedAt: media.updatedAt,
     };

@@ -27,6 +27,18 @@ export class Media {
   @Prop({ required: true, enum: MediaStatus, default: MediaStatus.PENDING_UPLOAD, index: true })
   status: MediaStatus;
 
+  @Prop()
+  width?: number;
+
+  @Prop()
+  height?: number;
+
+  @Prop()
+  thumbnailKey?: string;
+
+  @Prop()
+  failureReason?: string;
+
   createdAt: Date;
 
   updatedAt: Date;
