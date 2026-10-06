@@ -1,19 +1,38 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
 import { StorageService } from '../storage/storage.service';
 import { CreateUploadDto } from './dto/create-upload.dto';
 import { MediaResponseDto } from './dto/media-response.dto';
 import { UploadTicketDto } from './dto/upload-ticket.dto';
+import { MediaKind } from './media-kind.enum';
 import { MediaStatus } from './media-status.enum';
-import { ALLOWED_CONTENT_TYPES, UPLOAD_URL_TTL_SECONDS } from './media.constants';
+import {
+  ALLOWED_CONTENT_TYPES,
+  IMAGE_PROCESSING_QUEUE,
+  UPLOAD_URL_TTL_SECONDS,
+  VIDEO_PROCESSING_QUEUE,
+} from './media.constants';
 import { MediaRepository } from './media.repository';
+import { ProcessingJobData } from './processing-job';
 import { Media } from './schemas/media.schema';
 
 @Injectable()
 export class MediaService {
+  private readonly logger = new Logger(MediaService.name);
+
   constructor(
     private readonly mediaRepository: MediaRepository,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    @InjectQueue(IMAGE_PROCESSING_QUEUE) private readonly imageQueue: Queue<ProcessingJobData>,
+    @InjectQueue(VIDEO_PROCESSING_QUEUE) private readonly videoQueue: Queue<ProcessingJobData>
   ) {}
 
   async createUpload(payload: CreateUploadDto): Promise<UploadTicketDto> {
@@ -65,7 +84,26 @@ export class MediaService {
       throw new ConflictException('media is no longer pending upload');
     }
 
+    try {
+      await this.enqueueProcessing(updated);
+    } catch (error) {
+      this.logger.error(`failed to queue media ${id}: ${(error as Error).message}`);
+      await this.mediaRepository.transitionStatus(
+        id,
+        MediaStatus.UPLOADED,
+        MediaStatus.PENDING_UPLOAD
+      );
+      throw new ServiceUnavailableException('could not queue media for processing, try again');
+    }
+
     return MediaResponseDto.fromSchema(updated);
+  }
+
+  private async enqueueProcessing(media: Media): Promise<void> {
+    const queue = media.kind === MediaKind.VIDEO ? this.videoQueue : this.imageQueue;
+    const mediaId = media._id.toString();
+
+    await queue.add(media.kind, { mediaId }, { jobId: mediaId });
   }
 
   private async findOrFail(id: string): Promise<Media> {

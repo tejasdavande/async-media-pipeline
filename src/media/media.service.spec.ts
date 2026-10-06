@@ -1,4 +1,5 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Queue } from 'bullmq';
 import { Types } from 'mongoose';
 import { StorageService } from '../storage/storage.service';
 import { MediaKind } from './media-kind.enum';
@@ -13,6 +14,8 @@ describe('MediaService', () => {
     Pick<MediaRepository, 'create' | 'findById' | 'transitionStatus'>
   >;
   let storageService: jest.Mocked<Pick<StorageService, 'createUploadUrl' | 'getObjectSize'>>;
+  let imageQueue: { add: jest.Mock };
+  let videoQueue: { add: jest.Mock };
   let service: MediaService;
 
   const stored = (overrides: Partial<Media> = {}): Media => ({
@@ -31,9 +34,13 @@ describe('MediaService', () => {
   beforeEach(() => {
     mediaRepository = { create: jest.fn(), findById: jest.fn(), transitionStatus: jest.fn() };
     storageService = { createUploadUrl: jest.fn(), getObjectSize: jest.fn() };
+    imageQueue = { add: jest.fn() };
+    videoQueue = { add: jest.fn() };
     service = new MediaService(
       mediaRepository as unknown as MediaRepository,
-      storageService as unknown as StorageService
+      storageService as unknown as StorageService,
+      imageQueue as unknown as Queue,
+      videoQueue as unknown as Queue
     );
   });
 
@@ -108,6 +115,44 @@ describe('MediaService', () => {
         MediaStatus.UPLOADED
       );
       expect(result.status).toBe(MediaStatus.UPLOADED);
+    });
+
+    it.each([
+      [MediaKind.VIDEO, () => videoQueue, () => imageQueue],
+      [MediaKind.IMAGE, () => imageQueue, () => videoQueue],
+    ])('queues %s media on its own queue, keyed by media id', async (kind, target, other) => {
+      const media = stored({ kind });
+      const id = media._id.toString();
+      mediaRepository.findById.mockResolvedValue(media);
+      storageService.getObjectSize.mockResolvedValue(1024);
+      mediaRepository.transitionStatus.mockResolvedValue({
+        ...media,
+        status: MediaStatus.UPLOADED,
+      });
+
+      await service.completeUpload(id);
+
+      expect(target().add).toHaveBeenCalledWith(kind, { mediaId: id }, { jobId: id });
+      expect(other().add).not.toHaveBeenCalled();
+    });
+
+    it('puts the media back to pending when the job cannot be queued', async () => {
+      const media = stored();
+      const id = media._id.toString();
+      mediaRepository.findById.mockResolvedValue(media);
+      storageService.getObjectSize.mockResolvedValue(1024);
+      mediaRepository.transitionStatus.mockResolvedValueOnce({
+        ...media,
+        status: MediaStatus.UPLOADED,
+      });
+      videoQueue.add.mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+      await expect(service.completeUpload(id)).rejects.toThrow(ServiceUnavailableException);
+      expect(mediaRepository.transitionStatus).toHaveBeenLastCalledWith(
+        id,
+        MediaStatus.UPLOADED,
+        MediaStatus.PENDING_UPLOAD
+      );
     });
 
     it('throws 404 for unknown media', async () => {

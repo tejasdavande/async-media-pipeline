@@ -12,3 +12,7 @@ export const ALLOWED_CONTENT_TYPES: Record<string, MediaKind> = {
 export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 
 export const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+
+export const IMAGE_PROCESSING_QUEUE = 'image-processing';
+
+export const VIDEO_PROCESSING_QUEUE = 'video-processing';

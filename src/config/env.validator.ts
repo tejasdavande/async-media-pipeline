@@ -9,6 +9,13 @@ class EnvironmentVariables {
   MONGO_URI: string;
 
   @IsString()
+  REDIS_HOST: string;
+
+  @IsOptional()
+  @IsNumber()
+  REDIS_PORT?: number;
+
+  @IsString()
   S3_BUCKET: string;
 
   @IsString()

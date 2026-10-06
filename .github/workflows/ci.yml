@@ -19,6 +19,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
       localstack:
         image: localstack/localstack:3.8
         env:
@@ -34,6 +43,7 @@ jobs:
     env:
       PORT: 3000
       MONGO_URI: mongodb://localhost:27017/media_pipeline
+      REDIS_HOST: localhost
       S3_BUCKET: media
       S3_REGION: us-east-1
       S3_ENDPOINT: http://localhost:4566

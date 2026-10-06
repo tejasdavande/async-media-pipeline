@@ -1,8 +1,11 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import { randomBytes } from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { VIDEO_PROCESSING_QUEUE } from '../src/media/media.constants';
 
 describe('Media uploads (e2e)', () => {
   let app: INestApplication;
@@ -57,6 +60,11 @@ describe('Media uploads (e2e)', () => {
     const fetched = await request(app.getHttpServer()).get(`/media/${media.id}`).expect(200);
     expect(fetched.body.status).toBe('uploaded');
     expect(fetched.body.sourceKey).toBeUndefined();
+
+    const queue = app.get<Queue>(getQueueToken(VIDEO_PROCESSING_QUEUE));
+    const job = await queue.getJob(media.id);
+    expect(job?.data).toEqual({ mediaId: media.id });
+    expect(job?.opts.attempts).toBe(3);
 
     await request(app.getHttpServer()).post(`/media/${media.id}/complete`).expect(409);
   });
