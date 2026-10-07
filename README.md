@@ -65,14 +65,16 @@ curl -s -X POST localhost:3000/media/<id>/complete
 npm test
 ```
 
-The e2e suites run the real upload flow (create ticket, PUT to the presigned URL, complete) and the image worker end to end against Mongo, Redis and LocalStack, so start those first:
+The unit tests for the FFmpeg wrapper run the real `ffmpeg`/`ffprobe` binaries on clips generated with `lavfi`, so both need to be installed.
+
+The e2e suites run the real upload flow (create ticket, PUT to the presigned URL, complete) and both workers end to end against Mongo, Redis and LocalStack: an image goes through Sharp, and a generated 720p clip comes out as an HLS ladder in the bucket. Start those services first:
 
 ```bash
 docker compose up -d mongo redis localstack
 npm run test:e2e
 ```
 
-CI runs both suites, with Mongo, Redis and LocalStack as service containers.
+CI runs both suites, with Mongo, Redis and LocalStack as service containers and FFmpeg installed on the runner.
 
 ## License
 
