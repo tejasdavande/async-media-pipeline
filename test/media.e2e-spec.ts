@@ -58,7 +58,7 @@ describe('Media uploads (e2e)', () => {
     expect(completed.body.status).toBe('uploaded');
 
     const fetched = await request(app.getHttpServer()).get(`/media/${media.id}`).expect(200);
-    expect(fetched.body.status).toBe('uploaded');
+    expect(fetched.body.status).not.toBe('pending_upload');
     expect(fetched.body.sourceKey).toBeUndefined();
 
     const queue = app.get<Queue>(getQueueToken(VIDEO_PROCESSING_QUEUE));

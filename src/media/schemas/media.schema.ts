@@ -34,7 +34,13 @@ export class Media {
   height?: number;
 
   @Prop()
+  duration?: number;
+
+  @Prop()
   thumbnailKey?: string;
+
+  @Prop()
+  hlsKey?: string;
 
   @Prop()
   failureReason?: string;

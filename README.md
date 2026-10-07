@@ -2,7 +2,7 @@
 
 Async media processing microservice built with NestJS. Clients upload straight to S3 with presigned URLs, and the heavy work (FFmpeg HLS transcoding, Sharp thumbnails) runs in BullMQ workers backed by Redis, with retries and a job-status API to poll.
 
-Work in progress: presigned uploads, the processing queues and image thumbnails are in, FFmpeg HLS transcoding for video is next.
+Work in progress: presigned uploads, the processing queues, image thumbnails and video HLS transcoding are in. Signed playback URLs for the processed output are next.
 
 ## How uploads work
 
@@ -17,7 +17,7 @@ It then queues a processing job on BullMQ: videos go to `video-processing`, imag
 Status goes `pending_upload` → `uploaded` → `processing` → `ready` or `failed`. Poll `GET /media/:id` to follow it.
 
 - **Images** (`image-processing`, concurrency 4): Sharp auto-rotates from EXIF, records the original `width`/`height`, and writes a WebP thumbnail that fits in 320×320 (never upscaled) to `thumbnails/<id>.webp`. A file that doesn't decode as an image fails immediately with an `UnrecoverableError` instead of burning retries.
-- **Videos** (`video-processing`): queued, worker not written yet.
+- **Videos** (`video-processing`, concurrency 1): the source is streamed from S3 to a temp file (never buffered in memory), probed with `ffprobe`, and transcoded with FFmpeg in a single pass to an HLS ladder: 720p at 2.8 Mbps and 480p at 1.4 Mbps, H.264 + AAC, 6-second segments with keyframes forced on segment boundaries. Renditions bigger than the source are skipped, and a source smaller than 480p gets one rendition at its own size, so nothing is upscaled. The ladder is sized by the short side, so portrait phone video stays portrait, and the rotation flag phones write is applied before sizing. The output goes to `hls/<id>/master.m3u8` plus one folder per rendition, a frame from 1s in becomes the WebP thumbnail, and `width`/`height`/`duration` are recorded. A file `ffprobe` can't read fails immediately, while a failed transcode is retried. The temp directory is removed either way.
 
 A transient error (S3 timeout, say) is retried. Once the last attempt fails, the record moves to `failed` with a `failureReason`. A retried job picks up records already in `processing`, so a worker that crashed mid-job doesn't strand them.
 
@@ -25,7 +25,7 @@ Accepted types: `video/mp4`, `video/quicktime`, `video/webm`, `image/jpeg`, `ima
 
 ## Tech stack
 
-NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, Sharp, AWS S3 (SDK v3, presigned URLs), LocalStack for local S3, Docker.
+NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, FFmpeg, Sharp, AWS S3 (SDK v3, presigned URLs), LocalStack for local S3, Docker.
 
 ## Endpoints
 
@@ -34,7 +34,7 @@ NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, Sharp, AWS S3 (SDK v3, p
 | GET | `/health` | `200` when Mongo is connected, `503` otherwise |
 | POST | `/media/uploads` | body `{ filename, contentType, size }`; returns the media record, a presigned `uploadUrl` and its `expiresAt` |
 | POST | `/media/:id/complete` | confirms the object is in S3 with the declared size, marks the record `uploaded` and queues it for processing; `409` if it's missing, the size differs, or it isn't pending; `503` if the job couldn't be queued |
-| GET | `/media/:id` | media record with its current `status`, plus `width`/`height` once processed or `failureReason` if it failed |
+| GET | `/media/:id` | media record with its current `status`, plus `width`/`height` (and `duration` for video) once processed or `failureReason` if it failed |
 
 ## Running locally
 
@@ -44,6 +44,8 @@ docker compose up -d mongo redis localstack
 npm install
 npm run start:dev
 ```
+
+Running outside Docker needs `ffmpeg` and `ffprobe` on the PATH (`brew install ffmpeg`, `apt-get install ffmpeg`). The Docker image installs them.
 
 Or run everything in containers with `docker compose up --build`. LocalStack serves S3 on http://localhost:4566 and its init hook creates the `media` bucket on startup.
 

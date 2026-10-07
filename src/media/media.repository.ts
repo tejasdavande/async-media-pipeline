@@ -24,7 +24,9 @@ export class MediaRepository {
     id: string,
     from: MediaStatus | MediaStatus[],
     to: MediaStatus,
-    changes: Partial<Pick<Media, 'width' | 'height' | 'thumbnailKey' | 'failureReason'>> = {}
+    changes: Partial<
+      Pick<Media, 'width' | 'height' | 'duration' | 'thumbnailKey' | 'hlsKey' | 'failureReason'>
+    > = {}
   ): Promise<Media | null> {
     const status = Array.isArray(from) ? { $in: from } : from;
 

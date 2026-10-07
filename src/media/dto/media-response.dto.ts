@@ -11,6 +11,7 @@ export class MediaResponseDto {
   status: MediaStatus;
   width?: number;
   height?: number;
+  duration?: number;
   failureReason?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -25,6 +26,7 @@ export class MediaResponseDto {
       status: media.status,
       width: media.width,
       height: media.height,
+      duration: media.duration,
       failureReason: media.failureReason,
       createdAt: media.createdAt,
       updatedAt: media.updatedAt,

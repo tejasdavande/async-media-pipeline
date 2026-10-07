@@ -8,6 +8,10 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createReadStream, createWriteStream } from 'fs';
+import { stat } from 'fs/promises';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 
 @Injectable()
 export class StorageService {
@@ -70,6 +74,29 @@ export class StorageService {
   async putObject(key: string, body: Buffer, contentType: string): Promise<void> {
     await this.client.send(
       new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType })
+    );
+  }
+
+  async downloadToFile(key: string, path: string): Promise<void> {
+    const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    if (!(object.Body instanceof Readable)) {
+      throw new Error(`object ${key} has no body`);
+    }
+
+    await pipeline(object.Body, createWriteStream(path));
+  }
+
+  async uploadFile(key: string, path: string, contentType: string): Promise<void> {
+    const { size } = await stat(path);
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: createReadStream(path),
+        ContentType: contentType,
+        ContentLength: size,
+      })
     );
   }
 }
