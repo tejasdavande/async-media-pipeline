@@ -31,7 +31,7 @@ NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, FFmpeg, Sharp, AWS S3 (S
 
 | Method | Route | Description |
 |---|---|---|
-| GET | `/health` | `200` when Mongo is connected, `503` otherwise |
+| GET | `/health` | `200` when Mongo is connected and Redis answers within 1s, `503` otherwise |
 | POST | `/media/uploads` | body `{ filename, contentType, size }`; returns the media record, a presigned `uploadUrl` and its `expiresAt` |
 | POST | `/media/:id/complete` | confirms the object is in S3 with the declared size, marks the record `uploaded` and queues it for processing; `409` if it's missing, the size differs, or it isn't pending; `503` if the job couldn't be queued |
 | GET | `/media/:id` | media record with its current `status`, plus `width`/`height` (and `duration` for video) once processed or `failureReason` if it failed |
