@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   GetObjectCommand,
+  GetObjectCommandOutput,
   HeadObjectCommand,
+  NoSuchKey,
   NotFound,
   PutObjectCommand,
   S3Client,
@@ -12,6 +14,7 @@ import { createReadStream, createWriteStream } from 'fs';
 import { stat } from 'fs/promises';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
+import { ObjectNotFoundError } from './object-not-found.error';
 
 @Injectable()
 export class StorageService {
@@ -63,7 +66,7 @@ export class StorageService {
   }
 
   async getObject(key: string): Promise<Buffer> {
-    const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const object = await this.fetchObject(key);
     if (!object.Body) {
       throw new Error(`object ${key} has no body`);
     }
@@ -78,7 +81,7 @@ export class StorageService {
   }
 
   async downloadToFile(key: string, path: string): Promise<void> {
-    const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const object = await this.fetchObject(key);
     if (!(object.Body instanceof Readable)) {
       throw new Error(`object ${key} has no body`);
     }
@@ -98,5 +101,16 @@ export class StorageService {
         ContentLength: size,
       })
     );
+  }
+
+  private async fetchObject(key: string): Promise<GetObjectCommandOutput> {
+    try {
+      return await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    } catch (error) {
+      if (error instanceof NoSuchKey) {
+        throw new ObjectNotFoundError(key);
+      }
+      throw error;
+    }
   }
 }

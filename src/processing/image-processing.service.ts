@@ -3,6 +3,7 @@ import { UnrecoverableError } from 'bullmq';
 import sharp from 'sharp';
 import { MediaStatus } from '../media/media-status.enum';
 import { MediaRepository } from '../media/media.repository';
+import { ObjectNotFoundError } from '../storage/object-not-found.error';
 import { StorageService } from '../storage/storage.service';
 
 export const THUMBNAIL_SIZE = 320;
@@ -27,7 +28,15 @@ export class ImageProcessingService {
       return;
     }
 
-    const source = await this.storageService.getObject(media.sourceKey);
+    let source: Buffer;
+    try {
+      source = await this.storageService.getObject(media.sourceKey);
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) {
+        throw new UnrecoverableError('source file is missing from storage');
+      }
+      throw error;
+    }
 
     let width: number | undefined;
     let height: number | undefined;

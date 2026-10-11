@@ -1,8 +1,13 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import sharp from 'sharp';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { MediaStatus } from '../src/media/media-status.enum';
+import { IMAGE_PROCESSING_QUEUE } from '../src/media/media.constants';
+import { MediaRepository } from '../src/media/media.repository';
 import { StorageService } from '../src/storage/storage.service';
 
 describe('Image processing (e2e)', () => {
@@ -77,5 +82,25 @@ describe('Image processing (e2e)', () => {
 
     expect(media.status).toBe('failed');
     expect(media.failureReason).toMatch(/^could not decode image/);
+  });
+
+  it('fails a job whose source file is gone on the first attempt', async () => {
+    const ticket = await request(app.getHttpServer())
+      .post('/media/uploads')
+      .send({ filename: 'photo.png', contentType: 'image/png', size: 1024 })
+      .expect(201);
+    const id = ticket.body.media.id as string;
+
+    await app
+      .get(MediaRepository)
+      .transitionStatus(id, MediaStatus.PENDING_UPLOAD, MediaStatus.UPLOADED);
+    const queue = app.get<Queue>(getQueueToken(IMAGE_PROCESSING_QUEUE));
+    await queue.add('image', { mediaId: id }, { jobId: id });
+
+    const media = await waitForStatus(id, ['ready', 'failed']);
+
+    expect(media.status).toBe('failed');
+    expect(media.failureReason).toBe('source file is missing from storage');
+    expect((await queue.getJob(id))?.attemptsMade).toBe(1);
   });
 });

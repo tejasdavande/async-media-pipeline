@@ -5,6 +5,7 @@ import { dirname, join } from 'path';
 import sharp from 'sharp';
 import { MediaStatus } from '../media/media-status.enum';
 import { MediaRepository } from '../media/media.repository';
+import { ObjectNotFoundError } from '../storage/object-not-found.error';
 import { StorageService } from '../storage/storage.service';
 import { FfmpegService, VideoProbe } from './ffmpeg.service';
 import { VideoProcessingService } from './video-processing.service';
@@ -117,6 +118,17 @@ describe('VideoProcessingService', () => {
 
     await expect(service.process('m1')).rejects.toThrow(UnrecoverableError);
     expect(ffmpegService.transcodeHls).not.toHaveBeenCalled();
+  });
+
+  it('fails without retrying when the source object is gone, and cleans up', async () => {
+    storageService.downloadToFile.mockRejectedValue(new ObjectNotFoundError('uploads/abc'));
+
+    await expect(service.process('m1')).rejects.toThrow(
+      new UnrecoverableError('source file is missing from storage')
+    );
+    const sourcePath = storageService.downloadToFile.mock.calls[0][1];
+    expect(existsSync(dirname(sourcePath))).toBe(false);
+    expect(ffmpegService.probe).not.toHaveBeenCalled();
   });
 
   it('lets a failed transcode be retried and still cleans up', async () => {

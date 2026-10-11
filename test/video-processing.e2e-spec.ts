@@ -1,5 +1,7 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Queue } from 'bullmq';
 import { execFileSync } from 'child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -7,6 +9,9 @@ import { join } from 'path';
 import sharp from 'sharp';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { MediaStatus } from '../src/media/media-status.enum';
+import { VIDEO_PROCESSING_QUEUE } from '../src/media/media.constants';
+import { MediaRepository } from '../src/media/media.repository';
 import { StorageService } from '../src/storage/storage.service';
 
 describe('Video processing (e2e)', () => {
@@ -114,5 +119,25 @@ describe('Video processing (e2e)', () => {
 
     expect(media.status).toBe('failed');
     expect(media.failureReason).toMatch(/^could not read video: ffprobe failed: source: /);
+  }, 30_000);
+
+  it('fails a job whose source file is gone on the first attempt', async () => {
+    const ticket = await request(app.getHttpServer())
+      .post('/media/uploads')
+      .send({ filename: 'clip.mp4', contentType: 'video/mp4', size: 1024 })
+      .expect(201);
+    const id = ticket.body.media.id as string;
+
+    await app
+      .get(MediaRepository)
+      .transitionStatus(id, MediaStatus.PENDING_UPLOAD, MediaStatus.UPLOADED);
+    const queue = app.get<Queue>(getQueueToken(VIDEO_PROCESSING_QUEUE));
+    await queue.add('video', { mediaId: id }, { jobId: id });
+
+    const media = await waitForStatus(id, ['ready', 'failed']);
+
+    expect(media.status).toBe('failed');
+    expect(media.failureReason).toBe('source file is missing from storage');
+    expect((await queue.getJob(id))?.attemptsMade).toBe(1);
   }, 30_000);
 });

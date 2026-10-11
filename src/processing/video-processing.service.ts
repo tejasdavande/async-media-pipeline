@@ -6,6 +6,7 @@ import { extname, join, sep } from 'path';
 import sharp from 'sharp';
 import { MediaStatus } from '../media/media-status.enum';
 import { MediaRepository } from '../media/media.repository';
+import { ObjectNotFoundError } from '../storage/object-not-found.error';
 import { StorageService } from '../storage/storage.service';
 import { FfmpegService, HLS_MASTER_PLAYLIST, VideoProbe } from './ffmpeg.service';
 import { pickRenditions } from './hls-ladder';
@@ -40,7 +41,14 @@ export class VideoProcessingService {
     const workDir = await mkdtemp(join(tmpdir(), `media-${mediaId}-`));
     try {
       const source = join(workDir, 'source');
-      await this.storageService.downloadToFile(media.sourceKey, source);
+      try {
+        await this.storageService.downloadToFile(media.sourceKey, source);
+      } catch (error) {
+        if (error instanceof ObjectNotFoundError) {
+          throw new UnrecoverableError('source file is missing from storage');
+        }
+        throw error;
+      }
 
       let probe: VideoProbe;
       try {

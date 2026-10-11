@@ -2,6 +2,7 @@ import { UnrecoverableError } from 'bullmq';
 import sharp from 'sharp';
 import { MediaStatus } from '../media/media-status.enum';
 import { MediaRepository } from '../media/media.repository';
+import { ObjectNotFoundError } from '../storage/object-not-found.error';
 import { StorageService } from '../storage/storage.service';
 import { ImageProcessingService } from './image-processing.service';
 
@@ -75,6 +76,23 @@ describe('ImageProcessingService', () => {
 
     await expect(service.process('m1')).rejects.toThrow(UnrecoverableError);
     expect(storageService.putObject).not.toHaveBeenCalled();
+  });
+
+  it('fails without retrying when the source object is gone', async () => {
+    storageService.getObject.mockRejectedValue(new ObjectNotFoundError('uploads/abc'));
+
+    await expect(service.process('m1')).rejects.toThrow(
+      new UnrecoverableError('source file is missing from storage')
+    );
+  });
+
+  it('lets other storage errors through so the job is retried', async () => {
+    storageService.getObject.mockRejectedValue(new Error('socket hang up'));
+
+    const error = await service.process('m1').catch((e: Error) => e);
+
+    expect(error).not.toBeInstanceOf(UnrecoverableError);
+    expect(error).toEqual(new Error('socket hang up'));
   });
 
   it('marks media failed with the reason', async () => {

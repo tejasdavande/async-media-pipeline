@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
-import { NotFound, S3Client } from '@aws-sdk/client-s3';
+import { NoSuchKey, NotFound, S3Client } from '@aws-sdk/client-s3';
+import { ObjectNotFoundError } from './object-not-found.error';
 import { StorageService } from './storage.service';
 
 describe('StorageService', () => {
@@ -68,6 +69,34 @@ describe('StorageService', () => {
       await expect(new StorageService(config).getObjectSize('uploads/abc')).rejects.toThrow(
         'access denied'
       );
+    });
+  });
+
+  describe('reading objects', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    const noSuchKey = () => new NoSuchKey({ message: 'NoSuchKey', $metadata: {} });
+
+    it('throws ObjectNotFoundError from getObject when the key does not exist', async () => {
+      jest.spyOn(S3Client.prototype, 'send').mockRejectedValue(noSuchKey() as never);
+
+      await expect(new StorageService(config).getObject('uploads/abc')).rejects.toThrow(
+        ObjectNotFoundError
+      );
+    });
+
+    it('throws ObjectNotFoundError from downloadToFile when the key does not exist', async () => {
+      jest.spyOn(S3Client.prototype, 'send').mockRejectedValue(noSuchKey() as never);
+
+      await expect(
+        new StorageService(config).downloadToFile('uploads/abc', '/tmp/unused')
+      ).rejects.toThrow(ObjectNotFoundError);
+    });
+
+    it('rethrows other errors as they are', async () => {
+      jest.spyOn(S3Client.prototype, 'send').mockRejectedValue(new Error('timeout') as never);
+
+      await expect(new StorageService(config).getObject('uploads/abc')).rejects.toThrow('timeout');
     });
   });
 });
