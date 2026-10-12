@@ -56,7 +56,14 @@ describe('FfmpegService', () => {
         '-pix_fmt',
         'yuv420p',
       ]);
-      const rotated = clip('rotated.mp4', ['-display_rotation', '90', '-i', landscape, '-c', 'copy']);
+      const rotated = clip('rotated.mp4', [
+        '-display_rotation',
+        '90',
+        '-i',
+        landscape,
+        '-c',
+        'copy',
+      ]);
 
       expect(await service.probe(rotated)).toEqual(
         expect.objectContaining({ width: 360, height: 640, hasAudio: false })

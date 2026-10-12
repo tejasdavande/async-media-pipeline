@@ -60,6 +60,7 @@ jobs:
       - run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg)
       - run: npm ci
       - run: npm run lint
+      - run: npm run format:check
       - run: npm run build
       - run: npm test
       - run: aws --endpoint-url http://localhost:4566 s3 mb s3://media
