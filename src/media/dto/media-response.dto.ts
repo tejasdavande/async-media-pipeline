@@ -13,10 +13,11 @@ export class MediaResponseDto {
   height?: number;
   duration?: number;
   failureReason?: string;
+  thumbnailUrl?: string;
   createdAt: Date;
   updatedAt: Date;
 
-  static fromSchema(media: Media): MediaResponseDto {
+  static fromSchema(media: Media, thumbnailUrl?: string): MediaResponseDto {
     return {
       id: media._id.toString(),
       filename: media.filename,
@@ -28,6 +29,7 @@ export class MediaResponseDto {
       height: media.height,
       duration: media.duration,
       failureReason: media.failureReason,
+      thumbnailUrl,
       createdAt: media.createdAt,
       updatedAt: media.updatedAt,
     };

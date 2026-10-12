@@ -46,6 +46,16 @@ describe('StorageService', () => {
     expect(url.searchParams.has('x-amz-sdk-checksum-algorithm')).toBe(false);
   });
 
+  it('signs a GET url for downloads', async () => {
+    const service = new StorageService(config);
+
+    const url = new URL(await service.createDownloadUrl('thumbnails/abc.webp', 3600));
+
+    expect(url.pathname).toBe('/media/thumbnails/abc.webp');
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('3600');
+    expect(url.searchParams.get('X-Amz-SignedHeaders')).toBe('host');
+  });
+
   describe('getObjectSize', () => {
     afterEach(() => jest.restoreAllMocks());
 

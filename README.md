@@ -2,7 +2,7 @@
 
 Async media processing microservice built with NestJS. Clients upload straight to S3 with presigned URLs, and the heavy work (FFmpeg HLS transcoding, Sharp thumbnails) runs in BullMQ workers backed by Redis, with retries and a job-status API to poll.
 
-Work in progress: presigned uploads, the processing queues, image thumbnails and video HLS transcoding are in. Signed playback URLs for the processed output are next.
+Work in progress: presigned uploads, the processing queues, image thumbnails, video HLS transcoding and signed thumbnail URLs are in. Signed HLS playback is next.
 
 ## How uploads work
 
@@ -14,7 +14,7 @@ It then queues a processing job on BullMQ: videos go to `video-processing`, imag
 
 ## Processing
 
-Status goes `pending_upload` → `uploaded` → `processing` → `ready` or `failed`. Poll `GET /media/:id` to follow it.
+Status goes `pending_upload` → `uploaded` → `processing` → `ready` or `failed`. Poll `GET /media/:id` to follow it. Once a record is `ready`, the response includes a `thumbnailUrl`, a presigned `GET` that's valid for an hour. The bucket stays private and storage keys never leave the API, so fetch the record again for a fresh link.
 
 - **Images** (`image-processing`, concurrency 4): Sharp auto-rotates from EXIF, records the original `width`/`height`, and writes a WebP thumbnail that fits in 320×320 (never upscaled) to `thumbnails/<id>.webp`. A file that doesn't decode as an image fails immediately with an `UnrecoverableError` instead of burning retries.
 - **Videos** (`video-processing`, concurrency 1): the source is streamed from S3 to a temp file (never buffered in memory), probed with `ffprobe`, and transcoded with FFmpeg in a single pass to an HLS ladder: 720p at 2.8 Mbps and 480p at 1.4 Mbps, H.264 + AAC, 6-second segments with keyframes forced on segment boundaries. Renditions bigger than the source are skipped, and a source smaller than 480p gets one rendition at its own size, so nothing is upscaled. The ladder is sized by the short side, so portrait phone video stays portrait, and the rotation flag phones write is applied before sizing. The output goes to `hls/<id>/master.m3u8` plus one folder per rendition, a frame from 1s in becomes the WebP thumbnail, and `width`/`height`/`duration` are recorded. A file `ffprobe` can't read fails immediately, while a failed transcode is retried. The temp directory is removed either way.
@@ -34,7 +34,7 @@ NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, FFmpeg, Sharp, AWS S3 (S
 | GET | `/health` | `200` when Mongo is connected and Redis answers within 1s, `503` otherwise |
 | POST | `/media/uploads` | body `{ filename, contentType, size }`; returns the media record, a presigned `uploadUrl` and its `expiresAt` |
 | POST | `/media/:id/complete` | confirms the object is in S3 with the declared size, marks the record `uploaded` and queues it for processing; `409` if it's missing, the size differs, or it isn't pending; `503` if the job couldn't be queued |
-| GET | `/media/:id` | media record with its current `status`, plus `width`/`height` (and `duration` for video) once processed or `failureReason` if it failed |
+| GET | `/media/:id` | media record with its current `status`, plus `width`/`height` (and `duration` for video) and a presigned `thumbnailUrl` once processed, or `failureReason` if it failed |
 
 ## Running locally
 

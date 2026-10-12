@@ -52,6 +52,14 @@ export class StorageService {
     });
   }
 
+  async createDownloadUrl(key: string, expiresInSeconds: number): Promise<string> {
+    return await getSignedUrl(
+      this.client,
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      { expiresIn: expiresInSeconds }
+    );
+  }
+
   async getObjectSize(key: string): Promise<number | null> {
     try {
       const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));

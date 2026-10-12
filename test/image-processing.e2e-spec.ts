@@ -8,7 +8,6 @@ import { AppModule } from '../src/app.module';
 import { MediaStatus } from '../src/media/media-status.enum';
 import { IMAGE_PROCESSING_QUEUE } from '../src/media/media.constants';
 import { MediaRepository } from '../src/media/media.repository';
-import { StorageService } from '../src/storage/storage.service';
 
 describe('Image processing (e2e)', () => {
   let app: INestApplication;
@@ -70,7 +69,12 @@ describe('Image processing (e2e)', () => {
     expect(media).toEqual(expect.objectContaining({ status: 'ready', width: 1200, height: 800 }));
     expect(media.thumbnailKey).toBeUndefined();
 
-    const thumbnail = await app.get(StorageService).getObject(`thumbnails/${id}.webp`);
+    const download = await fetch(media.thumbnailUrl);
+    expect(download.status).toBe(200);
+    expect(download.headers.get('content-type')).toBe('image/webp');
+    const otherKey = await fetch(media.thumbnailUrl.replace(`thumbnails/${id}.webp`, 'uploads/x'));
+    expect(otherKey.status).toBe(403);
+    const thumbnail = Buffer.from(await download.arrayBuffer());
     expect(await sharp(thumbnail).metadata()).toEqual(
       expect.objectContaining({ format: 'webp', width: 320, height: 213 })
     );

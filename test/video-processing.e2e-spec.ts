@@ -107,7 +107,9 @@ describe('Video processing (e2e)', () => {
       );
     }
 
-    const thumbnail = await storage.getObject(`thumbnails/${id}.webp`);
+    const download = await fetch(media.thumbnailUrl);
+    expect(download.status).toBe(200);
+    const thumbnail = Buffer.from(await download.arrayBuffer());
     expect(await sharp(thumbnail).metadata()).toEqual(
       expect.objectContaining({ format: 'webp', width: 320, height: 180 })
     );

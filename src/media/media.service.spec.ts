@@ -4,7 +4,7 @@ import { Types } from 'mongoose';
 import { StorageService } from '../storage/storage.service';
 import { MediaKind } from './media-kind.enum';
 import { MediaStatus } from './media-status.enum';
-import { UPLOAD_URL_TTL_SECONDS } from './media.constants';
+import { DOWNLOAD_URL_TTL_SECONDS, UPLOAD_URL_TTL_SECONDS } from './media.constants';
 import { MediaRepository } from './media.repository';
 import { MediaService } from './media.service';
 import { Media } from './schemas/media.schema';
@@ -13,7 +13,9 @@ describe('MediaService', () => {
   let mediaRepository: jest.Mocked<
     Pick<MediaRepository, 'create' | 'findById' | 'transitionStatus'>
   >;
-  let storageService: jest.Mocked<Pick<StorageService, 'createUploadUrl' | 'getObjectSize'>>;
+  let storageService: jest.Mocked<
+    Pick<StorageService, 'createUploadUrl' | 'createDownloadUrl' | 'getObjectSize'>
+  >;
   let imageQueue: { add: jest.Mock };
   let videoQueue: { add: jest.Mock };
   let service: MediaService;
@@ -33,7 +35,11 @@ describe('MediaService', () => {
 
   beforeEach(() => {
     mediaRepository = { create: jest.fn(), findById: jest.fn(), transitionStatus: jest.fn() };
-    storageService = { createUploadUrl: jest.fn(), getObjectSize: jest.fn() };
+    storageService = {
+      createUploadUrl: jest.fn(),
+      createDownloadUrl: jest.fn(),
+      getObjectSize: jest.fn(),
+    };
     imageQueue = { add: jest.fn() };
     videoQueue = { add: jest.fn() };
     service = new MediaService(
@@ -82,9 +88,31 @@ describe('MediaService', () => {
       const media = stored();
       mediaRepository.findById.mockResolvedValue(media);
 
-      await expect(service.getById(media._id.toString())).resolves.toEqual(
+      const result = await service.getById(media._id.toString());
+
+      expect(result).toEqual(
         expect.objectContaining({ id: media._id.toString(), filename: 'clip.mp4' })
       );
+      expect(result.thumbnailUrl).toBeUndefined();
+      expect(storageService.createDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('signs a download url for the thumbnail once there is one', async () => {
+      const media = stored({
+        status: MediaStatus.READY,
+        thumbnailKey: 'thumbnails/abc.webp',
+      });
+      mediaRepository.findById.mockResolvedValue(media);
+      storageService.createDownloadUrl.mockResolvedValue('https://signed-thumbnail');
+
+      const result = await service.getById(media._id.toString());
+
+      expect(storageService.createDownloadUrl).toHaveBeenCalledWith(
+        'thumbnails/abc.webp',
+        DOWNLOAD_URL_TTL_SECONDS
+      );
+      expect(result.thumbnailUrl).toBe('https://signed-thumbnail');
+      expect(result).not.toHaveProperty('thumbnailKey');
     });
 
     it('throws 404 when it does not', async () => {

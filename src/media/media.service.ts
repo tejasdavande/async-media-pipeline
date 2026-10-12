@@ -16,6 +16,7 @@ import { MediaKind } from './media-kind.enum';
 import { MediaStatus } from './media-status.enum';
 import {
   ALLOWED_CONTENT_TYPES,
+  DOWNLOAD_URL_TTL_SECONDS,
   IMAGE_PROCESSING_QUEUE,
   UPLOAD_URL_TTL_SECONDS,
   VIDEO_PROCESSING_QUEUE,
@@ -58,7 +59,12 @@ export class MediaService {
   }
 
   async getById(id: string): Promise<MediaResponseDto> {
-    return MediaResponseDto.fromSchema(await this.findOrFail(id));
+    const media = await this.findOrFail(id);
+    const thumbnailUrl = media.thumbnailKey
+      ? await this.storageService.createDownloadUrl(media.thumbnailKey, DOWNLOAD_URL_TTL_SECONDS)
+      : undefined;
+
+    return MediaResponseDto.fromSchema(media, thumbnailUrl);
   }
 
   async completeUpload(id: string): Promise<MediaResponseDto> {
