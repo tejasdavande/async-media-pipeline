@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { Types } from 'mongoose';
+import { ObjectNotFoundError } from '../storage/object-not-found.error';
 import { StorageService } from '../storage/storage.service';
 import { MediaKind } from './media-kind.enum';
 import { MediaStatus } from './media-status.enum';
@@ -14,7 +15,7 @@ describe('MediaService', () => {
     Pick<MediaRepository, 'create' | 'findById' | 'transitionStatus'>
   >;
   let storageService: jest.Mocked<
-    Pick<StorageService, 'createUploadUrl' | 'createDownloadUrl' | 'getObjectSize'>
+    Pick<StorageService, 'createUploadUrl' | 'createDownloadUrl' | 'getObjectSize' | 'getObject'>
   >;
   let imageQueue: { add: jest.Mock };
   let videoQueue: { add: jest.Mock };
@@ -39,6 +40,7 @@ describe('MediaService', () => {
       createUploadUrl: jest.fn(),
       createDownloadUrl: jest.fn(),
       getObjectSize: jest.fn(),
+      getObject: jest.fn(),
     };
     imageQueue = { add: jest.fn() };
     videoQueue = { add: jest.fn() };
@@ -121,6 +123,67 @@ describe('MediaService', () => {
       await expect(service.getById(new Types.ObjectId().toString())).rejects.toThrow(
         NotFoundException
       );
+    });
+  });
+
+  describe('hls playlists', () => {
+    const ready = () =>
+      stored({ status: MediaStatus.READY, duration: 90, hlsKey: 'hls/abc/master.m3u8' });
+
+    it('serves the master playlist as stored', async () => {
+      mediaRepository.findById.mockResolvedValue(ready());
+      storageService.getObject.mockResolvedValue(Buffer.from('#EXTM3U\n720p/index.m3u8\n'));
+
+      const playlist = await service.getHlsMasterPlaylist(new Types.ObjectId().toString());
+
+      expect(storageService.getObject).toHaveBeenCalledWith('hls/abc/master.m3u8');
+      expect(playlist).toBe('#EXTM3U\n720p/index.m3u8\n');
+    });
+
+    it('swaps segment uris in a rendition playlist for presigned urls', async () => {
+      mediaRepository.findById.mockResolvedValue(ready());
+      storageService.getObject.mockResolvedValue(
+        Buffer.from('#EXTM3U\n#EXTINF:6.0,\nsegment_000.ts\n#EXTINF:2.0,\nsegment_001.ts\n')
+      );
+      storageService.createDownloadUrl.mockImplementation(async (key) => `https://signed/${key}`);
+
+      const playlist = await service.getHlsRenditionPlaylist(
+        new Types.ObjectId().toString(),
+        '720p'
+      );
+
+      expect(storageService.getObject).toHaveBeenCalledWith('hls/abc/720p/index.m3u8');
+      expect(storageService.createDownloadUrl).toHaveBeenCalledWith(
+        'hls/abc/720p/segment_000.ts',
+        DOWNLOAD_URL_TTL_SECONDS + 90
+      );
+      expect(playlist).toBe(
+        '#EXTM3U\n#EXTINF:6.0,\nhttps://signed/hls/abc/720p/segment_000.ts\n' +
+          '#EXTINF:2.0,\nhttps://signed/hls/abc/720p/segment_001.ts\n'
+      );
+    });
+
+    it.each([
+      ['still processing', { status: MediaStatus.PROCESSING }],
+      ['an image', { status: MediaStatus.READY, kind: MediaKind.IMAGE }],
+    ])('throws 404 for media that is %s', async (_, overrides) => {
+      mediaRepository.findById.mockResolvedValue(stored(overrides));
+
+      await expect(service.getHlsMasterPlaylist(new Types.ObjectId().toString())).rejects.toThrow(
+        NotFoundException
+      );
+      expect(storageService.getObject).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 for a rendition that was not transcoded', async () => {
+      mediaRepository.findById.mockResolvedValue(ready());
+      storageService.getObject.mockRejectedValue(
+        new ObjectNotFoundError('hls/abc/1080p/index.m3u8')
+      );
+
+      await expect(
+        service.getHlsRenditionPlaylist(new Types.ObjectId().toString(), '1080p')
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

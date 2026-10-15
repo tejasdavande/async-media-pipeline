@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { extname, join, sep } from 'path';
 import sharp from 'sharp';
 import { MediaStatus } from '../media/media-status.enum';
+import { HLS_PLAYLIST_CONTENT_TYPE } from '../media/media.constants';
 import { MediaRepository } from '../media/media.repository';
 import { ObjectNotFoundError } from '../storage/object-not-found.error';
 import { StorageService } from '../storage/storage.service';
@@ -13,7 +14,7 @@ import { pickRenditions } from './hls-ladder';
 import { THUMBNAIL_SIZE } from './image-processing.service';
 
 const HLS_CONTENT_TYPES: Record<string, string> = {
-  '.m3u8': 'application/vnd.apple.mpegurl',
+  '.m3u8': HLS_PLAYLIST_CONTENT_TYPE,
   '.ts': 'video/mp2t',
 };
 

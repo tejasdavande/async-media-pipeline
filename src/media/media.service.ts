@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
+import { posix } from 'path';
+import { ObjectNotFoundError } from '../storage/object-not-found.error';
 import { StorageService } from '../storage/storage.service';
 import { CreateUploadDto } from './dto/create-upload.dto';
 import { MediaResponseDto } from './dto/media-response.dto';
@@ -67,6 +69,33 @@ export class MediaService {
     return MediaResponseDto.fromSchema(media, thumbnailUrl);
   }
 
+  async getHlsMasterPlaylist(id: string): Promise<string> {
+    const { hlsKey } = await this.findPlayable(id);
+
+    return await this.readPlaylist(hlsKey);
+  }
+
+  async getHlsRenditionPlaylist(id: string, rendition: string): Promise<string> {
+    const media = await this.findPlayable(id);
+    const renditionPrefix = `${posix.dirname(media.hlsKey)}/${rendition}`;
+    const playlist = await this.readPlaylist(`${renditionPrefix}/index.m3u8`);
+
+    // vod playlists are fetched once at the start, so segment urls have to outlive the playback
+    const ttl = DOWNLOAD_URL_TTL_SECONDS + Math.ceil(media.duration ?? 0);
+    const lines = await Promise.all(
+      playlist.split('\n').map(async (line) => {
+        const uri = line.trim();
+        if (!uri || uri.startsWith('#')) {
+          return line;
+        }
+
+        return await this.storageService.createDownloadUrl(`${renditionPrefix}/${uri}`, ttl);
+      })
+    );
+
+    return lines.join('\n');
+  }
+
   async completeUpload(id: string): Promise<MediaResponseDto> {
     const media = await this.findOrFail(id);
     if (media.status !== MediaStatus.PENDING_UPLOAD) {
@@ -110,6 +139,26 @@ export class MediaService {
     const mediaId = media._id.toString();
 
     await queue.add(media.kind, { mediaId }, { jobId: mediaId });
+  }
+
+  private async findPlayable(id: string): Promise<Media & { hlsKey: string }> {
+    const media = await this.findOrFail(id);
+    if (media.status !== MediaStatus.READY || !media.hlsKey) {
+      throw new NotFoundException('media has no hls playback');
+    }
+
+    return { ...media, hlsKey: media.hlsKey };
+  }
+
+  private async readPlaylist(key: string): Promise<string> {
+    try {
+      return (await this.storageService.getObject(key)).toString();
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) {
+        throw new NotFoundException('playlist not found');
+      }
+      throw error;
+    }
   }
 
   private async findOrFail(id: string): Promise<Media> {

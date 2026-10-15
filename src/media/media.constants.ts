@@ -18,3 +18,5 @@ export const DOWNLOAD_URL_TTL_SECONDS = 60 * 60;
 export const IMAGE_PROCESSING_QUEUE = 'image-processing';
 
 export const VIDEO_PROCESSING_QUEUE = 'video-processing';
+
+export const HLS_PLAYLIST_CONTENT_TYPE = 'application/vnd.apple.mpegurl';
