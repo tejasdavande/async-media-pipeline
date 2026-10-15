@@ -12,7 +12,6 @@ import { AppModule } from '../src/app.module';
 import { MediaStatus } from '../src/media/media-status.enum';
 import { VIDEO_PROCESSING_QUEUE } from '../src/media/media.constants';
 import { MediaRepository } from '../src/media/media.repository';
-import { StorageService } from '../src/storage/storage.service';
 
 describe('Video processing (e2e)', () => {
   let app: INestApplication;
@@ -94,18 +93,33 @@ describe('Video processing (e2e)', () => {
     expect(media.duration).toBeCloseTo(3, 0);
     expect(media.hlsKey).toBeUndefined();
 
-    const storage = app.get(StorageService);
-    const master = (await storage.getObject(`hls/${id}/master.m3u8`)).toString();
-    expect(master).toContain('720p/index.m3u8');
-    expect(master).toContain('480p/index.m3u8');
+    expect(media.playbackUrl).toBe(`/media/${id}/hls/master.m3u8`);
+    const master = await request(app.getHttpServer()).get(media.playbackUrl).expect(200);
+    expect(master.headers['content-type']).toMatch(/^application\/vnd\.apple\.mpegurl/);
+    expect(master.text).toContain('720p/index.m3u8');
+    expect(master.text).toContain('480p/index.m3u8');
 
     for (const rendition of ['720p', '480p']) {
-      const playlist = (await storage.getObject(`hls/${id}/${rendition}/index.m3u8`)).toString();
-      expect(playlist).toContain('#EXT-X-ENDLIST');
-      expect(await storage.getObjectSize(`hls/${id}/${rendition}/segment_000.ts`)).toBeGreaterThan(
-        0
-      );
+      const playlist = await request(app.getHttpServer())
+        .get(`/media/${id}/hls/${rendition}/index.m3u8`)
+        .expect(200);
+      expect(playlist.text).toContain('#EXT-X-ENDLIST');
+      expect(playlist.text).not.toMatch(/^segment_/m);
+
+      const segmentUrls = playlist.text.split('\n').filter((line) => line.startsWith('http'));
+      expect(segmentUrls).toHaveLength(1);
+      const segment = await fetch(segmentUrls[0]);
+      expect(segment.status).toBe(200);
+      expect(segment.headers.get('content-type')).toBe('video/mp2t');
+      expect((await segment.arrayBuffer()).byteLength).toBeGreaterThan(0);
+
+      const other = rendition === '720p' ? '480p' : '720p';
+      const tampered = await fetch(segmentUrls[0].replace(`/${rendition}/`, `/${other}/`));
+      expect(tampered.status).toBe(403);
     }
+
+    await request(app.getHttpServer()).get(`/media/${id}/hls/1080p/index.m3u8`).expect(404);
+    await request(app.getHttpServer()).get(`/media/${id}/hls/abc/index.m3u8`).expect(400);
 
     const download = await fetch(media.thumbnailUrl);
     expect(download.status).toBe(200);

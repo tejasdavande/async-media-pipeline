@@ -2,7 +2,7 @@
 
 Async media processing microservice built with NestJS. Clients upload straight to S3 with presigned URLs, and the heavy work (FFmpeg HLS transcoding, Sharp thumbnails) runs in BullMQ workers backed by Redis, with retries and a job-status API to poll.
 
-Work in progress: presigned uploads, the processing queues, image thumbnails, video HLS transcoding and signed thumbnail URLs are in. Signed HLS playback is next.
+Work in progress: presigned uploads, the processing queues, image thumbnails, video HLS transcoding, signed thumbnail URLs and signed HLS playback are in.
 
 ## How uploads work
 
@@ -21,6 +21,12 @@ Status goes `pending_upload` → `uploaded` → `processing` → `ready` or `fai
 
 A transient error (S3 timeout, say) is retried. A source file that's missing from the bucket fails straight away, since retrying won't bring it back. Once the last attempt fails, the record moves to `failed` with a `failureReason`. A retried job picks up records already in `processing`, so a worker that crashed mid-job doesn't strand them.
 
+## Playback
+
+A `ready` video's record has a `playbackUrl` (`/media/:id/hls/master.m3u8`, relative to the API) that any HLS player can load. A single presigned link can't cover HLS, because the player fetches the rendition playlists and segments by relative path, and each of those would need its own signature. So the API serves the playlists itself. The master playlist goes out as stored, and its relative rendition URIs resolve back to `/media/:id/hls/<rendition>/index.m3u8` on the API. When it serves a rendition playlist, it swaps each segment URI for a presigned S3 `GET`, so segment bytes still come straight from S3 and the bucket stays private.
+
+Segment links are valid for an hour plus the video's duration. A VOD playlist is fetched once when playback starts, so the links have to last until the last segment is played.
+
 Accepted types: `video/mp4`, `video/quicktime`, `video/webm`, `image/jpeg`, `image/png`, `image/webp`, up to 2 GB.
 
 ## Tech stack
@@ -34,7 +40,9 @@ NestJS, TypeScript, MongoDB (Mongoose), BullMQ + Redis, FFmpeg, Sharp, AWS S3 (S
 | GET | `/health` | `200` when Mongo is connected and Redis answers within 1s, `503` otherwise |
 | POST | `/media/uploads` | body `{ filename, contentType, size }`; returns the media record, a presigned `uploadUrl` and its `expiresAt` |
 | POST | `/media/:id/complete` | confirms the object is in S3 with the declared size, marks the record `uploaded` and queues it for processing; `409` if it's missing, the size differs, or it isn't pending; `503` if the job couldn't be queued |
-| GET | `/media/:id` | media record with its current `status`, plus `width`/`height` (and `duration` for video) and a presigned `thumbnailUrl` once processed, or `failureReason` if it failed |
+| GET | `/media/:id` | media record with its current `status`, plus `width`/`height` (and `duration` for video) and a presigned `thumbnailUrl` once processed, `playbackUrl` for a ready video, or `failureReason` if it failed |
+| GET | `/media/:id/hls/master.m3u8` | HLS master playlist for a ready video; `404` until then |
+| GET | `/media/:id/hls/:rendition/index.m3u8` | rendition playlist (`720p`, `480p`, ...) with presigned segment URLs; `404` for a rendition that wasn't transcoded |
 
 ## Running locally
 
@@ -67,7 +75,7 @@ npm test
 
 The unit tests for the FFmpeg wrapper run the real `ffmpeg`/`ffprobe` binaries on clips generated with `lavfi`, so both need to be installed.
 
-The e2e suites run the real upload flow (create ticket, PUT to the presigned URL, complete) and both workers end to end against Mongo, Redis and LocalStack: an image goes through Sharp, and a generated 720p clip comes out as an HLS ladder in the bucket. Start those services first:
+The e2e suites run the real upload flow (create ticket, PUT to the presigned URL, complete) and both workers end to end against Mongo, Redis and LocalStack: an image goes through Sharp, and a generated 720p clip comes out as an HLS ladder that's played back through the playlist routes and presigned segment URLs. Start those services first:
 
 ```bash
 docker compose up -d mongo redis localstack

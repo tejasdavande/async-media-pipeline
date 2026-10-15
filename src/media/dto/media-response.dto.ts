@@ -14,12 +14,15 @@ export class MediaResponseDto {
   duration?: number;
   failureReason?: string;
   thumbnailUrl?: string;
+  playbackUrl?: string;
   createdAt: Date;
   updatedAt: Date;
 
   static fromSchema(media: Media, thumbnailUrl?: string): MediaResponseDto {
+    const id = media._id.toString();
+
     return {
-      id: media._id.toString(),
+      id,
       filename: media.filename,
       contentType: media.contentType,
       kind: media.kind,
@@ -30,6 +33,7 @@ export class MediaResponseDto {
       duration: media.duration,
       failureReason: media.failureReason,
       thumbnailUrl,
+      playbackUrl: media.hlsKey ? `/media/${id}/hls/master.m3u8` : undefined,
       createdAt: media.createdAt,
       updatedAt: media.updatedAt,
     };

@@ -96,6 +96,7 @@ describe('MediaService', () => {
         expect.objectContaining({ id: media._id.toString(), filename: 'clip.mp4' })
       );
       expect(result.thumbnailUrl).toBeUndefined();
+      expect(result.playbackUrl).toBeUndefined();
       expect(storageService.createDownloadUrl).not.toHaveBeenCalled();
     });
 
@@ -115,6 +116,16 @@ describe('MediaService', () => {
       );
       expect(result.thumbnailUrl).toBe('https://signed-thumbnail');
       expect(result).not.toHaveProperty('thumbnailKey');
+    });
+
+    it('points ready videos at the hls playlist route', async () => {
+      const media = stored({ status: MediaStatus.READY, hlsKey: 'hls/abc/master.m3u8' });
+      mediaRepository.findById.mockResolvedValue(media);
+
+      const result = await service.getById(media._id.toString());
+
+      expect(result.playbackUrl).toBe(`/media/${media._id.toString()}/hls/master.m3u8`);
+      expect(result).not.toHaveProperty('hlsKey');
     });
 
     it('throws 404 when it does not', async () => {
