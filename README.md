@@ -2,7 +2,7 @@
 
 Async media processing microservice built with NestJS. Clients upload straight to S3 with presigned URLs, and the heavy work (FFmpeg HLS transcoding, Sharp thumbnails) runs in BullMQ workers backed by Redis, with retries and a job-status API to poll.
 
-Work in progress: presigned uploads, the processing queues, image thumbnails, video HLS transcoding, signed thumbnail URLs and signed HLS playback are in.
+Work in progress: presigned uploads, the processing queues, image thumbnails, video HLS transcoding, signed thumbnail URLs, signed HLS playback and CORS for browser clients are in.
 
 ## Architecture
 
@@ -65,6 +65,17 @@ A transient error (S3 timeout, say) is retried. A source file that's missing fro
 A `ready` video's record has a `playbackUrl` (`/media/:id/hls/master.m3u8`, relative to the API) that any HLS player can load. A single presigned link can't cover HLS, because the player fetches the rendition playlists and segments by relative path, and each of those would need its own signature. So the API serves the playlists itself. The master playlist goes out as stored, and its relative rendition URIs resolve back to `/media/:id/hls/<rendition>/index.m3u8` on the API. When it serves a rendition playlist, it swaps each segment URI for a presigned S3 `GET`, so segment bytes still come straight from S3 and the bucket stays private.
 
 Segment links are valid for an hour plus the video's duration. A VOD playlist is fetched once when playback starts, so the links have to last until the last segment is played.
+
+### Browser clients
+
+A web app or player like hls.js on another origin needs CORS in two places:
+
+- **The API**: set `CORS_ORIGINS` to a comma-separated list of origins (`https://app.example.com,http://localhost:5173`), scheme and host only. Startup fails on an entry with a path or trailing slash, because the browser's `Origin` header never has one and the entry would silently never match. With it unset, the API sends no CORS headers.
+- **The bucket**: the browser PUTs the upload and GETs segments and thumbnails straight from S3, so the bucket needs its own CORS rule allowing `PUT`/`GET`/`HEAD` and the `content-type` header. Locally, LocalStack's init hook applies [`docker/localstack/bucket-cors.json`](docker/localstack/bucket-cors.json), which allows any origin. On real S3, apply the same rule with your app's origins in place of `*`:
+
+  ```bash
+  aws s3api put-bucket-cors --bucket <bucket> --cors-configuration file://bucket-cors.json
+  ```
 
 Accepted types: `video/mp4`, `video/quicktime`, `video/webm`, `image/jpeg`, `image/png`, `image/webp`, up to 2 GB.
 

@@ -1,5 +1,13 @@
 import { plainToInstance, Transform } from 'class-transformer';
-import { IsBoolean, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  validateSync,
+} from 'class-validator';
 
 class EnvironmentVariables {
   @IsNumber()
@@ -35,6 +43,19 @@ class EnvironmentVariables {
 
   @IsString()
   S3_SECRET_ACCESS_KEY: string;
+
+  // the Origin header never has a path or trailing slash, so an entry with one would never match
+  @IsOptional()
+  @Transform(({ obj }) =>
+    typeof obj.CORS_ORIGINS === 'string'
+      ? obj.CORS_ORIGINS.split(',')
+          .map((origin: string) => origin.trim())
+          .filter(Boolean)
+      : obj.CORS_ORIGINS
+  )
+  @IsArray()
+  @Matches(/^https?:\/\/[^/\s]+$/, { each: true })
+  CORS_ORIGINS?: string[];
 }
 
 export function validate(config: Record<string, unknown>) {

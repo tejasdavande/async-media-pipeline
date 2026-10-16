@@ -1,5 +1,5 @@
 import { getQueueToken } from '@nestjs/bullmq';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Queue } from 'bullmq';
 import { execFileSync } from 'child_process';
@@ -12,6 +12,7 @@ import { AppModule } from '../src/app.module';
 import { MediaStatus } from '../src/media/media-status.enum';
 import { VIDEO_PROCESSING_QUEUE } from '../src/media/media.constants';
 import { MediaRepository } from '../src/media/media.repository';
+import { setupApp } from '../src/setup-app';
 
 describe('Video processing (e2e)', () => {
   let app: INestApplication;
@@ -55,7 +56,7 @@ describe('Video processing (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    setupApp(app);
     await app.init();
   });
 

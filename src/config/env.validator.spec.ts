@@ -23,4 +23,22 @@ describe('validate', () => {
   it('rejects a missing bucket', () => {
     expect(() => validate({ ...base, S3_BUCKET: undefined })).toThrow();
   });
+
+  it('splits CORS_ORIGINS on commas', () => {
+    expect(
+      validate({ ...base, CORS_ORIGINS: 'http://localhost:5173, https://player.example.com' })
+        .CORS_ORIGINS
+    ).toEqual(['http://localhost:5173', 'https://player.example.com']);
+  });
+
+  it('leaves CORS_ORIGINS undefined when unset', () => {
+    expect(validate(base).CORS_ORIGINS).toBeUndefined();
+  });
+
+  it.each(['https://player.example.com/', 'player.example.com', 'https://example.com/app'])(
+    'rejects CORS origin %s',
+    (origin) => {
+      expect(() => validate({ ...base, CORS_ORIGINS: origin })).toThrow();
+    }
+  );
 });

@@ -35,6 +35,7 @@ services:
       - '4566:4566'
     volumes:
       - ./docker/localstack/init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh
+      - ./docker/localstack/bucket-cors.json:/etc/localstack/bucket-cors.json
 
 volumes:
   mongodata:

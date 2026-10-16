@@ -63,7 +63,10 @@ jobs:
       - run: npm run format:check
       - run: npm run build
       - run: npm test
-      - run: aws --endpoint-url http://localhost:4566 s3 mb s3://media
+      - run: |
+          aws --endpoint-url http://localhost:4566 s3 mb s3://media
+          aws --endpoint-url http://localhost:4566 s3api put-bucket-cors --bucket media \
+            --cors-configuration file://docker/localstack/bucket-cors.json
         env:
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test

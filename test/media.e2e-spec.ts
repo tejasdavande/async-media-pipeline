@@ -1,11 +1,12 @@
 import { getQueueToken } from '@nestjs/bullmq';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Queue } from 'bullmq';
 import { randomBytes } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { VIDEO_PROCESSING_QUEUE } from '../src/media/media.constants';
+import { setupApp } from '../src/setup-app';
 
 describe('Media uploads (e2e)', () => {
   let app: INestApplication;
@@ -29,7 +30,7 @@ describe('Media uploads (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    setupApp(app);
     await app.init();
   });
 
