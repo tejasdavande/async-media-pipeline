@@ -4,6 +4,45 @@ Async media processing microservice built with NestJS. Clients upload straight t
 
 Work in progress: presigned uploads, the processing queues, image thumbnails, video HLS transcoding, signed thumbnail URLs and signed HLS playback are in.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    client([Client])
+    subgraph api [API]
+        media[media routes]
+        hls[HLS playlist routes]
+    end
+    subgraph workers [Workers]
+        img[image-processing<br/>Sharp]
+        vid[video-processing<br/>FFmpeg]
+    end
+    mongo[(MongoDB<br/>media records)]
+    redis[(Redis<br/>BullMQ)]
+    s3[(S3<br/>private bucket)]
+
+    client -- "1. POST /media/uploads" --> media
+    client -- "2. PUT file, presigned" --> s3
+    client -- "3. POST /media/:id/complete" --> media
+    media --> mongo
+    media -- HeadObject --> s3
+    media -- enqueue --> redis
+    redis --> img & vid
+    img & vid -- "source in, output out" --> s3
+    img & vid -- status --> mongo
+    client -- "4. GET playlists" --> hls
+    client -- "5. GET segments and thumbnail, presigned" --> s3
+```
+
+File bytes never pass through the API. It signs URLs, checks objects with `HeadObject` and keeps status in Mongo, so it stays cheap to run. The CPU-heavy work happens in the workers. They're registered in the same Nest app for now, but they share nothing with the API except Redis, Mongo and S3, so they can move to their own deployment and scale on queue depth without code changes.
+
+Code is split into Nest feature modules:
+
+- `src/media`: upload tickets, the complete step, status reads and the HLS playlist routes (controller → service → repository). `MediaRepository` is the only thing that writes to the collection, and every status change is a conditional update on the current status.
+- `src/processing`: thin BullMQ processors that hand off to `ImageProcessingService` and `VideoProcessingService`, plus `FfmpegService` (plain `execFile` on `ffmpeg`/`ffprobe`) and the HLS ladder rules.
+- `src/storage`: the only code that touches the S3 SDK. It presigns, does head/get/put, streams files both ways, and turns a missing key into `ObjectNotFoundError` so callers don't depend on SDK error types.
+- `src/health`: the Mongo and Redis checks behind `/health`.
+
 ## How uploads work
 
 The API never proxies file bytes. `POST /media/uploads` validates the declared content type and size, stores a `pending_upload` record in Mongo, and returns a presigned S3 `PUT` URL valid for 15 minutes. The client uploads the file straight to S3 (or LocalStack locally) with that URL, sending the same `Content-Type` it declared, since the signature covers it.
